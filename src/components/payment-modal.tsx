@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { X, Zap, Bitcoin, Wallet, CheckCircle, Shield, Loader2 } from "lucide-react";
+import { useWallet } from "./wallet-provider";
+import { Contract, stark } from "starknet";
 import { WalletConnector } from "./wallet-connector";
 import { TransactionTracker } from "./transaction-tracker";
-import { mintTokens } from "@/lib/cashu";
+import { getWalletBalance, payInvoice } from "@/lib/cashu";
 import { connectXverse, sendBtcPayment } from "@/lib/xverse";
 import { BtcAddress } from "sats-connect";
 
@@ -53,7 +55,7 @@ interface SwapInfo {
 }
 
 type PaymentMethod = "strk" | "btc" | "cashu";
-type PaymentStep = "select" | "connect" | "confirm" | "processing" | "success" | "error";
+type PaymentStep = "select" | "connect" | "confirm" | "processing" | "success" | "error" | "show_invoice";
 
 // --- COMPONENT ---
 
@@ -62,6 +64,7 @@ export function PaymentModal({
   onClose,
   onPaymentComplete,
 }: PaymentModalProps) {
+  const { starknetWallet } = useWallet();
   // --- STATE ---
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("strk");
   const [step, setStep] = useState<PaymentStep>("select");
@@ -117,7 +120,7 @@ export function PaymentModal({
       const response = await fetch('/api/swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userStarknetAddress: starknetAddress }),
+        body: JSON.stringify({ userStarknetAddress: starknetAddress, contentId: content.id }),
       });
 
       if (!response.ok) {
@@ -160,8 +163,49 @@ export function PaymentModal({
         }
         return; // Exit early for cashu
       } else {
-        // Mock Starknet transaction
-        txId = `0x${Math.random().toString(16).substr(2, 64)}`;
+        if (!connectedWallet || !starknetWallet?.account) {
+          throw new Error("Starknet wallet not connected.");
+        }
+
+        const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+        if (!contractAddress) {
+          throw new Error("Contract address is not configured.");
+        }
+
+        const { abi } = await starknetWallet.provider.getClassAt(contractAddress);
+        if (!abi) {
+          throw new Error("ABI not found for the contract.");
+        }
+
+        const paymentContract = new Contract(abi, contractAddress, starknetWallet.account);
+
+        // --- Step 1: Buy the voucher ---
+        const priceInWei = stark.parseUnits(content.price.strk.toString(), 18);
+        const buyVoucherTx = await paymentContract.buy_voucher(priceInWei.low);
+        const buyVoucherReceipt = await starknetWallet.provider.waitForTransaction(buyVoucherTx.transaction_hash);
+
+        // --- Step 2: Extract the voucher ID from the event ---
+        // The starknet.js v5 receipt format has events under `events`
+        const voucherPurchasedEvent = buyVoucherReceipt.events?.find(
+          (e: any) => e.keys[0] === stark.getSelectorFromName("VoucherPurchased")
+        );
+
+        if (!voucherPurchasedEvent) {
+          throw new Error("Voucher purchase event not found.");
+        }
+        const voucherId = voucherPurchasedEvent.data[0];
+
+        // --- Step 3: Redeem the voucher ---
+        const contentId = stark.getSelectorFromName(content.id); // Assuming content.id is a string like "article-1"
+        const creatorAddress = process.env.NEXT_PUBLIC_CREATOR_ADDRESS;
+        if (!creatorAddress) {
+          throw new Error("Creator address is not configured.");
+        }
+
+        const redeemVoucherTx = await paymentContract.redeem_voucher(voucherId, contentId, creatorAddress);
+        await starknetWallet.provider.waitForTransaction(redeemVoucherTx.transaction_hash);
+
+        txId = redeemVoucherTx.transaction_hash;
       }
 
       setTransaction({

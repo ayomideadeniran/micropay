@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SwapperFactory } from '@atomiqlabs/sdk';
 import { StarknetInitializer, StarknetInitializerType } from '@atomiqlabs/chain-starknet';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 // This is a placeholder for the actual content price.
 // In a real application, you would fetch this from your database or a price oracle.
@@ -19,13 +21,31 @@ const factory = new SwapperFactory<[StarknetInitializerType]>(
 const FROM_TOKEN = 'BTC.BTC';
 const TO_TOKEN = 'STRK.ETH'; 
 
+// Path to our simple JSON database
+const SWAPS_DB_PATH = path.resolve(process.cwd(), 'swaps.json');
+
+async function readSwaps() {
+    try {
+        await fs.access(SWAPS_DB_PATH);
+        const data = await fs.readFile(SWAPS_DB_PATH, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        // If the file doesn't exist, return an empty array
+        return [];
+    }
+}
+
+async function writeSwaps(swaps: any[]) {
+    await fs.writeFile(SWAPS_DB_PATH, JSON.stringify(swaps, null, 2));
+}
+
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { userStarknetAddress } = body;
+        const { userStarknetAddress, contentId } = body;
 
-        if (!userStarknetAddress) {
-            return NextResponse.json({ error: 'Missing required field: userStarknetAddress' }, { status: 400 });
+        if (!userStarknetAddress || !contentId) {
+            return NextResponse.json({ error: 'Missing required fields: userStarknetAddress, contentId' }, { status: 400 });
         }
 
         // 1. Calculate the required amount of STRK for the content
@@ -45,9 +65,6 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Create the swap.
-        // The Atomiq oracle will ultimately call the `unlock_with_btc` function on our contract.
-        // The `redeemAddress` tells the SDK where to send the swapped STRK tokens.
-        // For our use case, the tokens aren't directly sent to the user, but are used by the oracle.
         const swap = await swapper.create({
             fromToken,
             toToken,
@@ -63,9 +80,17 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Failed to generate deposit address.' }, { status: 500 });
         }
 
-        // In a real app, you would save the swap.id here to track its status later.
+        // 5. Save the swap to our JSON database
+        const swaps = await readSwaps();
+        swaps.push({
+            swapId: swap.id,
+            userStarknetAddress,
+            contentId,
+            status: 'PENDING_DEPOSIT'
+        });
+        await writeSwaps(swaps);
 
-        // 5. Return the details to the frontend
+        // 6. Return the details to the frontend
         return NextResponse.json({
             depositAddress,
             amount: fromAmount, // The amount of BTC to send
