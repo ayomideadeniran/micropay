@@ -5,13 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { X, Zap, Bitcoin, Wallet, CheckCircle, Shield, Loader2 } from "lucide-react";
-import { useWallet } from "./wallet-provider";
-import { Contract, stark } from "starknet";
+import { useAccount } from "@starknet-react/core";
+import { Contract, stark, num, hash, cairo, json } from "starknet";
 import { WalletConnector } from "./wallet-connector";
 import { TransactionTracker } from "./transaction-tracker";
 import { getWalletBalance, payInvoice } from "@/lib/cashu";
 import { connectXverse, sendBtcPayment } from "@/lib/xverse";
 import { BtcAddress } from "sats-connect";
+import abi from "../../smart_contract/target/dev/smart_contract_PaymentManager.contract_class.json";
+
 
 // --- TYPE DEFINITIONS ---
 
@@ -64,7 +66,7 @@ export function PaymentModal({
   onClose,
   onPaymentComplete,
 }: PaymentModalProps) {
-  const { starknetWallet } = useWallet();
+  const { account } = useAccount();
   // --- STATE ---
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("strk");
   const [step, setStep] = useState<PaymentStep>("select");
@@ -163,7 +165,7 @@ export function PaymentModal({
         }
         return; // Exit early for cashu
       } else {
-        if (!connectedWallet || !starknetWallet?.account) {
+        if (!connectedWallet || !account) {
           throw new Error("Starknet wallet not connected.");
         }
 
@@ -172,38 +174,38 @@ export function PaymentModal({
           throw new Error("Contract address is not configured.");
         }
 
-        const { abi } = await starknetWallet.provider.getClassAt(contractAddress);
-        if (!abi) {
-          throw new Error("ABI not found for the contract.");
-        }
-
-        const paymentContract = new Contract(abi, contractAddress, starknetWallet.account);
+        const paymentContract = new Contract(abi.abi, contractAddress, account);
+        console.log("paymentContract", paymentContract);
 
         // --- Step 1: Buy the voucher ---
-        const priceInWei = stark.parseUnits(content.price.strk.toString(), 18);
-        const buyVoucherTx = await paymentContract.buy_voucher(priceInWei.low);
-        const buyVoucherReceipt = await starknetWallet.provider.waitForTransaction(buyVoucherTx.transaction_hash);
+        const priceInWei = cairo.uint256(BigInt(content.price.strk * 1e18));
+        const buyVoucherTx = await paymentContract.buy_voucher(priceInWei);
+        const buyVoucherReceipt = await account.waitForTransaction(buyVoucherTx.transaction_hash);
 
         // --- Step 2: Extract the voucher ID from the event ---
-        // The starknet.js v5 receipt format has events under `events`
-        const voucherPurchasedEvent = buyVoucherReceipt.events?.find(
-          (e: any) => e.keys[0] === stark.getSelectorFromName("VoucherPurchased")
+        const events = paymentContract.parser.parseEvents(buyVoucherReceipt);
+        const voucherPurchasedEvent = events.find(
+          (e: any) => e.name === "VoucherPurchased"
         );
 
-        if (!voucherPurchasedEvent) {
-          throw new Error("Voucher purchase event not found.");
+        if (!voucherPurchasedEvent || !voucherPurchasedEvent.data) {
+          throw new Error("Voucher purchase event not found or data is missing.");
         }
-        const voucherId = voucherPurchasedEvent.data[0];
+        const voucherId = voucherPurchasedEvent.data.voucher;
 
         // --- Step 3: Redeem the voucher ---
-        const contentId = stark.getSelectorFromName(content.id); // Assuming content.id is a string like "article-1"
+        const contentId = hash.getSelectorFromName(content.id); // Assuming content.id is a string like "article-1"
         const creatorAddress = process.env.NEXT_PUBLIC_CREATOR_ADDRESS;
         if (!creatorAddress) {
           throw new Error("Creator address is not configured.");
         }
 
-        const redeemVoucherTx = await paymentContract.redeem_voucher(voucherId, contentId, creatorAddress);
-        await starknetWallet.provider.waitForTransaction(redeemVoucherTx.transaction_hash);
+        const redeemVoucherTx = await paymentContract.redeem_voucher(
+            voucherId,
+            contentId,
+            creatorAddress
+        );
+        await account.waitForTransaction(redeemVoucherTx.transaction_hash);
 
         txId = redeemVoucherTx.transaction_hash;
       }
@@ -302,7 +304,7 @@ export function PaymentModal({
           <div>
             <h3 className="text-xl font-semibold mb-2 text-center">Processing Payment</h3>
             <p className="text-muted-foreground text-center mb-6">Your transaction has been sent. Waiting for confirmation...</p>
-            {transaction && <TransactionTracker transaction={transaction} onComplete={handleTransactionComplete} />}
+            {transaction && <TransactionTracker transaction={transaction} onComplete={handleTransactionComplete} />} 
           </div>
         );
 

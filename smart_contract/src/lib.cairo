@@ -17,6 +17,10 @@ pub trait IPaymentManager<TContractState> {
     fn get_content_price(self: @TContractState, content_id: felt252) -> u256;
     fn get_creator_balance(self: @TContractState, creator: ContractAddress) -> u256;
     fn get_content_unlock_count(self: @TContractState, content_id: felt252) -> u256;
+    fn set_content_price(ref self: TContractState, content_id: felt252, price: u256);
+    fn buy_voucher(ref self: TContractState, price: u256);
+    fn set_oracle_address(ref self: TContractState, oracle_address: ContractAddress);
+    fn unlock_with_btc(ref self: TContractState, user: ContractAddress, content_id: felt252, creator: ContractAddress);
 }
 
 /// A simplified interface for an ERC20 token.
@@ -59,7 +63,7 @@ pub mod PaymentManager {
 
     /// The address of the STRK token contract (Placeholder).
     const STRK_TOKEN_ADDRESS: ContractAddress = 
-        0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+        0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7 // Sepolia ETH
         .try_into()
         .unwrap();
 
@@ -77,9 +81,7 @@ pub mod PaymentManager {
         oracle_address: ContractAddress,
     }
     
-    // ----------------------------------------------------
-    // --- EVENTS ---
-    // ----------------------------------------------------
+    // ----------------------------------------------------\n    // --- EVENTS ---\n    // ----------------------------------------------------
 
     #[derive(Drop, starknet::Event)]  
     struct ContentUnlocked {
@@ -117,9 +119,7 @@ pub mod PaymentManager {
         PausableEvent: openzeppelin::security::pausable::PausableComponent::Event,
     }
 
-    // ----------------------------------------------------
-    // --- CONSTRUCTOR & FUNCTIONS (FIXED) ---
-    // ----------------------------------------------------
+    // ----------------------------------------------------\n    // --- CONSTRUCTOR & FUNCTIONS (FIXED) ---\n    // ----------------------------------------------------
 
     #[constructor]
     fn constructor(ref self: ContractState, owner_address: ContractAddress) {
@@ -204,19 +204,12 @@ pub mod PaymentManager {
         fn get_content_unlock_count(self: @ContractState, content_id: felt252) -> u256 {
             self.content_unlock_counts.read(content_id)
         }
-    }
 
-    // --- EXTERNAL FUNCTIONS (Custom Implementation) ---
-
-    #[generate_trait]
-    impl ExternalImpl of ExternalTrait {
-        /// Sets the price of a specific piece of content. Can only be called by the owner.
         fn set_content_price(ref self: ContractState, content_id: felt252, price: u256) {
             self.ownable.assert_only_owner();
             self.content_prices.write(content_id, price);
         }
 
-        /// Buys a voucher for a specific price.
         fn buy_voucher(ref self: ContractState, price: u256) {
             self.pausable.assert_not_paused();
             
@@ -233,13 +226,11 @@ pub mod PaymentManager {
             self.emit(Event::VoucherPurchased(VoucherPurchased { voucher, price }));
         }
 
-        /// Sets the address of the oracle (e.g., Atomiq). Can only be called by the owner.
         fn set_oracle_address(ref self: ContractState, oracle_address: ContractAddress) {
             self.ownable.assert_only_owner();
             self.oracle_address.write(oracle_address);
         }
 
-        /// Unlocks a piece of content with a BTC payment. Can only be called by the oracle (e.g., Atomiq).
         fn unlock_with_btc(ref self: ContractState, user: ContractAddress, content_id: felt252, creator: ContractAddress) {
             self.pausable.assert_not_paused();
             
@@ -249,3 +240,5 @@ pub mod PaymentManager {
         }
     }
 }
+
+

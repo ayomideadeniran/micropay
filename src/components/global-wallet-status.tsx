@@ -4,20 +4,32 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Wallet, Zap, Bitcoin, ChevronDown, LogOut } from "lucide-react"
-import { useWallet } from "./wallet-provider"
+import { useAccount, useConnect, useDisconnect } from "@starknet-react/core"
 import { useState } from "react"
 
 export function GlobalWalletStatus() {
-  const { starknetWallet, xverseWallet, connectStarknet, connectXverse, disconnectStarknet, disconnectXverse } =
-    useWallet()
+  const { address, isConnected } = useAccount()
+  const { connect, connectors } = useConnect()
+  const { disconnect } = useDisconnect()
   const [showDropdown, setShowDropdown] = useState(false)
 
-  const hasConnectedWallet = starknetWallet || xverseWallet
+  // Mock Xverse connection
+  const [xverseWallet, setXverseWallet] = useState<{ address: string; balance: number } | null>(null)
+
+  const hasConnectedWallet = isConnected || xverseWallet
+
+  const connectXverse = () => {
+    setXverseWallet({ address: "bc1q...xyz", balance: 50000 })
+  }
+
+  const disconnectXverse = () => {
+    setXverseWallet(null)
+  }
 
   if (!hasConnectedWallet) {
     return (
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={connectStarknet} className="glass bg-transparent">
+        <Button variant="outline" size="sm" onClick={() => connect({ connector: connectors[0] })} className="glass bg-transparent">
           <Zap className="w-4 h-4 mr-2" />
           Connect
         </Button>
@@ -35,7 +47,7 @@ export function GlobalWalletStatus() {
       >
         <Wallet className="w-4 h-4" />
         <span className="hidden sm:inline">
-          {starknetWallet ? `${starknetWallet.address.slice(0, 6)}...` : `${xverseWallet?.address.slice(0, 6)}...`}
+          {isConnected ? `${address?.slice(0, 6)}...` : `${xverseWallet?.address.slice(0, 6)}...`}
         </span>
         <ChevronDown className="w-3 h-3" />
       </Button>
@@ -50,7 +62,7 @@ export function GlobalWalletStatus() {
               </Button>
             </div>
 
-            {starknetWallet && (
+            {isConnected && address && (
               <div className="p-3 rounded-lg bg-secondary/30">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -58,12 +70,11 @@ export function GlobalWalletStatus() {
                     <span className="font-medium">Starknet</span>
                     <Badge className="bg-accent/20 text-accent border-0 text-xs">Connected</Badge>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={disconnectStarknet} className="h-6 px-2">
+                  <Button variant="ghost" size="sm" onClick={() => disconnect()} className="h-6 px-2">
                     <LogOut className="w-3 h-3" />
                   </Button>
                 </div>
-                <div className="text-sm text-muted-foreground font-mono">{starknetWallet.address}</div>
-                <div className="text-sm text-muted-foreground">{starknetWallet.balance.toFixed(3)} STRK</div>
+                <div className="text-sm text-muted-foreground font-mono">{address}</div>
               </div>
             )}
 
@@ -84,11 +95,20 @@ export function GlobalWalletStatus() {
               </div>
             )}
 
-            {!starknetWallet && (
-              <Button onClick={connectStarknet} className="w-full" size="sm">
-                <Zap className="w-4 h-4 mr-2" />
-                Connect Starknet
-              </Button>
+            {!isConnected && (
+              <div className="grid grid-cols-2 gap-2">
+                {connectors.map((connector) => (
+                  <Button
+                    key={connector.id}
+                    onClick={() => connect({ connector })}
+                    className="w-full"
+                    size="sm"
+                  >
+                    <Zap className="w-4 h-4 mr-2" />
+                    {connector.name}
+                  </Button>
+                ))}
+              </div>
             )}
 
             {!xverseWallet && (

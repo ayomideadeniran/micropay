@@ -9,6 +9,8 @@ edition = "2024_07"
 starknet = "2.11.4"
 openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v2.0.0-alpha.1" }
 
+[profile.release]
+inherits = "dev"
 
 [dev-dependencies]
 snforge_std = "0.48.1"
@@ -16,6 +18,7 @@ assert_macros = "2.12.2"
 
 [[target.starknet-contract]]
 sierra = true
+casm = true
 
 [scripts]
 test = "snforge test"

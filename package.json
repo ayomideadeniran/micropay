@@ -7,21 +7,23 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "start:oracle": "ts-node run-oracle.ts"
+    "run:oracle": "ts-node run-oracle.ts"
   },
   "dependencies": {
-    "@atomiqlabs/chain-starknet": "^5.1.5",
-    "@atomiqlabs/sdk": "^6.0.3",
     "@cashu/cashu-ts": "^2.7.2",
     "@radix-ui/react-slot": "^1.2.3",
+    "@starknet-react/core": "2.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "get-starknet-core": "3.2.0",
+    "lightning-invoice": "^0.2.0",
     "lucide-react": "^0.544.0",
     "next": "15.5.3",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "recharts": "^3.2.1",
     "sats-connect": "^4.1.1",
+    "starknet": "^7.6.4",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {

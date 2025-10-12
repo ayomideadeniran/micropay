@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Wallet, Zap, Bitcoin, CheckCircle, AlertCircle, ExternalLink } from "lucide-react"
+import { useConnect, useAccount, useDisconnect } from "@starknet-react/core";
 
 interface WalletConnectorProps {
   onWalletConnected: (wallet: WalletInfo) => void
@@ -14,47 +15,32 @@ interface WalletConnectorProps {
 interface WalletInfo {
   type: "starknet" | "xverse"
   address: string
-  balance: number
+  balance?: number
   connected: boolean
 }
 
 export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }: WalletConnectorProps) {
-  const [connecting, setConnecting] = useState<string | null>(null)
-  const [connectedWallet, setConnectedWallet] = useState<WalletInfo | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { connect, connectors } = useConnect();
+  const { address, isConnected, account } = useAccount();
+  const { disconnect } = useDisconnect();
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock wallet detection
-  const [availableWallets, setAvailableWallets] = useState({
-    starknet: true, // Mock: Braavos/ArgentX detected
-    xverse: true, // Mock: Xverse detected
-  })
+  // Mock Xverse connection
+  const [xverseWallet, setXverseWallet] = useState<WalletInfo | null>(null);
 
-  const connectStarknetWallet = async () => {
-    setConnecting("starknet")
-    setError(null)
-
-    try {
-      // Mock Starknet wallet connection
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      const mockWallet: WalletInfo = {
+  useEffect(() => {
+    if (isConnected && address && account) {
+      onWalletConnected({
         type: "starknet",
-        address: "0x1234...5678",
-        balance: 10.5, // STRK
+        address: address,
         connected: true,
-      }
-
-      setConnectedWallet(mockWallet)
-      onWalletConnected(mockWallet)
-    } catch (err) {
-      setError("Failed to connect to Starknet wallet")
-    } finally {
-      setConnecting(null)
+      });
     }
-  }
+  }, [isConnected, address, account, onWalletConnected]);
 
   const connectXverseWallet = async () => {
-    setConnecting("xverse")
+    setConnecting(true)
     setError(null)
 
     try {
@@ -68,21 +54,16 @@ export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }:
         connected: true,
       }
 
-      setConnectedWallet(mockWallet)
+      setXverseWallet(mockWallet);
       onWalletConnected(mockWallet)
     } catch (err) {
       setError("Failed to connect to Xverse wallet")
     } finally {
-      setConnecting(null)
+      setConnecting(false)
     }
   }
 
-  const disconnectWallet = () => {
-    setConnectedWallet(null)
-    setError(null)
-  }
-
-  if (connectedWallet) {
+  if (isConnected && address) {
     return (
       <Card className="p-4 glass glow-green">
         <div className="flex items-center justify-between">
@@ -92,20 +73,39 @@ export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }:
             </div>
             <div>
               <div className="font-medium flex items-center gap-2">
-                {connectedWallet.type === "starknet" ? "Starknet Wallet" : "Xverse Wallet"}
+                Starknet Wallet
                 <Badge className="bg-accent/20 text-accent border-0 text-xs">Connected</Badge>
               </div>
-              <div className="text-sm text-muted-foreground">{connectedWallet.address}</div>
+              <div className="text-sm text-muted-foreground">{address}</div>
             </div>
           </div>
-          <div className="text-right">
-            <div className="font-semibold">
-              {connectedWallet.balance} {connectedWallet.type === "starknet" ? "STRK" : "sats"}
+          <Button variant="ghost" size="sm" onClick={() => disconnect()} className="text-xs h-6 px-2">
+            Disconnect
+          </Button>
+        </div>
+      </Card>
+    )
+  }
+
+  if (xverseWallet) {
+    return (
+      <Card className="p-4 glass glow-green">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+              <CheckCircle className="w-5 h-5 text-accent" />
             </div>
-            <Button variant="ghost" size="sm" onClick={disconnectWallet} className="text-xs h-6 px-2">
-              Disconnect
-            </Button>
+            <div>
+              <div className="font-medium flex items-center gap-2">
+                Xverse Wallet
+                <Badge className="bg-accent/20 text-accent border-0 text-xs">Connected</Badge>
+              </div>
+              <div className="text-sm text-muted-foreground">{xverseWallet.address}</div>
+            </div>
           </div>
+          <Button variant="ghost" size="sm" onClick={() => setXverseWallet(null)} className="text-xs h-6 px-2">
+            Disconnect
+          </Button>
         </div>
       </Card>
     )
@@ -125,7 +125,7 @@ export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }:
       <div className="space-y-3">
         {/* Starknet Wallets */}
         <Card
-          className={`p-4 cursor-pointer transition-all duration-200 ${
+          className={`p-4 transition-all duration-200 ${
             preferredMethod === "strk" ? "ring-2 ring-primary glow-purple" : "hover:bg-secondary/50"
           }`}
         >
@@ -139,46 +139,31 @@ export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }:
                 <div className="text-sm text-muted-foreground">Braavos, ArgentX</div>
               </div>
             </div>
-            {availableWallets.starknet ? (
-              <Badge className="bg-accent/20 text-accent border-0">Detected</Badge>
-            ) : (
-              <Badge variant="outline" className="text-muted-foreground">
-                Not Found
-              </Badge>
-            )}
           </div>
 
-          <Button
-            onClick={connectStarknetWallet}
-            disabled={!availableWallets.starknet || connecting === "starknet"}
-            className="w-full glow-purple"
-            size="sm"
-          >
-            {connecting === "starknet" ? (
-              <>
-                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                Connecting...
-              </>
-            ) : (
-              <>
-                <Wallet className="w-4 h-4 mr-2" />
-                Connect Starknet
-              </>
-            )}
-          </Button>
-
-          {!availableWallets.starknet && (
-            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" />
-              <a href="https://braavos.app" target="_blank" rel="noopener noreferrer" className="hover:text-primary">
-                Install Braavos
-              </a>
-              <span>or</span>
-              <a href="https://argent.xyz" target="_blank" rel="noopener noreferrer" className="hover:text-primary">
-                ArgentX
-              </a>
-            </div>
-          )}
+          <div className="grid grid-cols-2 gap-2">
+            {connectors.map((connector) => (
+              <Button
+                key={connector.id}
+                onClick={() => connect({ connector })}
+                disabled={connecting}
+                className="w-full glow-purple"
+                size="sm"
+              >
+                {connecting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-4 h-4 mr-2" />
+                    {connector.name}
+                  </>
+                )}
+              </Button>
+            ))}
+          </div>
         </Card>
 
         {/* Bitcoin Wallets */}
@@ -197,22 +182,15 @@ export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }:
                 <div className="text-sm text-muted-foreground">Xverse, Unisat</div>
               </div>
             </div>
-            {availableWallets.xverse ? (
-              <Badge className="bg-accent/20 text-accent border-0">Detected</Badge>
-            ) : (
-              <Badge variant="outline" className="text-muted-foreground">
-                Not Found
-              </Badge>
-            )}
           </div>
 
           <Button
             onClick={connectXverseWallet}
-            disabled={!availableWallets.xverse || connecting === "xverse"}
+            disabled={connecting}
             className="w-full bg-orange-400 hover:bg-orange-500 text-black"
             size="sm"
           >
-            {connecting === "xverse" ? (
+            {connecting ? (
               <>
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
                 Connecting...
@@ -224,15 +202,6 @@ export function WalletConnector({ onWalletConnected, preferredMethod = "strk" }:
               </>
             )}
           </Button>
-
-          {!availableWallets.xverse && (
-            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" />
-              <a href="https://xverse.app" target="_blank" rel="noopener noreferrer" className="hover:text-primary">
-                Install Xverse
-              </a>
-            </div>
-          )}
         </Card>
       </div>
     </div>

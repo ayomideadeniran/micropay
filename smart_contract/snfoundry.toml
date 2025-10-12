@@ -2,8 +2,8 @@
 # and https://foundry-rs.github.io/starknet-foundry/projects/configuration.html for more information
 
 [sncast.default]                                         # Define a profile name
-url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_7" # Url of the RPC provider
-accounts-file = "./.snfoundry/accounts.json"                        # Path to the file with the account data
+url = "https://free-rpc.nethermind.io/sepolia-juno/" # Url of the RPC provider
+accounts-file = "account.json"                        # Path to the file with the account data
 account = "my_account"                                     # Account from `accounts_file` or default account file that will be used for the transactions
 # keystore = "~/keystore"                                  # Path to the keystore file
 wait-params = { timeout = 300, retry-interval = 10 }     # Wait for submitted transaction parameters
