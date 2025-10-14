@@ -18,7 +18,14 @@ const COMPILED_CONTRACT_PATH = path.resolve(process.cwd(), 'smart_contract/targe
 
 // --- HELPER FUNCTIONS ---
 
-async function readSwaps() {
+interface SwapData {
+    swapId: string;
+    userStarknetAddress: string;
+    contentId: string;
+    status: string;
+  }
+
+async function readSwaps(): Promise<SwapData[]> {
     try {
         await fs.access(SWAPS_DB_PATH);
         const data = await fs.readFile(SWAPS_DB_PATH, 'utf-8');
@@ -28,7 +35,7 @@ async function readSwaps() {
     }
 }
 
-async function writeSwaps(swaps: any[]) {
+async function writeSwaps(swaps: SwapData[]) {
     await fs.writeFile(SWAPS_DB_PATH, JSON.stringify(swaps, null, 2));
 }
 
@@ -47,9 +54,9 @@ async function runOracle() {
     const oracleAccount = new Account(provider, ORACLE_ADDRESS, ORACLE_PRIVATE_KEY);
 
     // 2. Initialize Atomiq SDK
-    const factory = new SwapperFactory<[StarknetInitializerType]>([StarknetInitializer] as const);
+    const factory = new SwapperFactory([StarknetInitializer] as any);
     const swapper = await factory.newSwapper({
-        starknet: { rpcUrl: STARKNET_RPC_URL }
+        rpcUrl: STARKNET_RPC_URL
     });
 
     // 3. Load the contract ABI

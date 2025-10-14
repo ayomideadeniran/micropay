@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useAccount } from "@starknet-react/core"
+import { getContentPrice } from "@/lib/contracts"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -90,6 +92,34 @@ export default function CreatorDashboard() {
     },
   ])
 
+  const [contentPrice, setContentPrice] = useState<number | null>(null);
+  const [creatorBalance, setCreatorBalance] = useState<number | null>(null);
+
+  const { account } = useAccount();
+
+  useEffect(() => {
+    const fetchContentPrice = async () => {
+      if (account) {
+        const price = await getContentPrice(account, "1");
+        if (price) {
+          setContentPrice(Number(price));
+        }
+      }
+    };
+
+    const fetchCreatorBalance = async () => {
+      if (account) {
+        const balance = await getCreatorBalance(account);
+        if (balance) {
+          setCreatorBalance(Number(balance));
+        }
+      }
+    };
+
+    fetchContentPrice();
+    fetchCreatorBalance();
+  }, [account]);
+
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const handleRefresh = () => {
@@ -176,12 +206,12 @@ export default function CreatorDashboard() {
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">Total Earnings</p>
-                <p className="text-2xl font-bold">${stats.totalEarnings.usd}</p>
+                {creatorBalance !== null ? (
+                  <p className="text-2xl font-bold">{creatorBalance} STRK</p>
+                ) : (
+                  <p className="text-2xl font-bold">Loading...</p>
+                )}
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Zap className="w-3 h-3" />
-                    {stats.totalEarnings.strk} STRK
-                  </span>
                   <span className="flex items-center gap-1">
                     <Bitcoin className="w-3 h-3" />
                     {stats.totalEarnings.btc.toLocaleString()} sats
@@ -297,7 +327,7 @@ export default function CreatorDashboard() {
                   <div className="text-right">
                     <div className="font-semibold">${content.earnings.usd}</div>
                     <div className="text-sm text-muted-foreground">
-                      {content.earnings.strk} STRK • {content.earnings.btc.toLocaleString()} sats
+                      {content.id === "1" && contentPrice !== null ? `${contentPrice} STRK` : `${content.earnings.strk} STRK • ${content.earnings.btc.toLocaleString()} sats`}
                     </div>
                   </div>
                 </div>
@@ -312,7 +342,7 @@ export default function CreatorDashboard() {
                 <Calendar className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold">Today's Performance</h3>
+                <h3 className="text-lg font-semibold">Today’s Performance</h3>
                 <p className="text-sm text-muted-foreground">Real-time updates</p>
               </div>
             </div>

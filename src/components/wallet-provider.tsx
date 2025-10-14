@@ -18,8 +18,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const { connectors } = useInjectedConnectors({
     // Show recommended connectors at the top of the list
     recommended: [argent(), braavos()],
-    // Hide connectors that are already listed in recommended
-    includeRecommended: "onlyIfNoConnectors",
+    // Show recommended connectors at the top of the list
+    includeRecommended: "always",
     // Sort connectors alphabetically by name
     order: "alphabetical",
   });

@@ -1,18 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { X, Zap, Bitcoin, Wallet, CheckCircle, Shield, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";;
+import { Card } from "@/components/ui/card";;
+import { X, Zap, Bitcoin, Wallet, CheckCircle, Shield, LoaderCircle as Loader2 } from "lucide-react";
 import { useAccount } from "@starknet-react/core";
-import { Contract, stark, num, hash, cairo, json } from "starknet";
+import { hash, cairo, CallData } from "starknet";
 import { WalletConnector } from "./wallet-connector";
 import { TransactionTracker } from "./transaction-tracker";
-import { getWalletBalance, payInvoice } from "@/lib/cashu";
 import { connectXverse, sendBtcPayment } from "@/lib/xverse";
 import { BtcAddress } from "sats-connect";
 import abi from "../../smart_contract/target/dev/smart_contract_PaymentManager.contract_class.json";
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x03041c3c9bac50a6412900348abb4dd3dd99e901144e122e787052fe616b1727";
+const STRK_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_STRK_TOKEN_ADDRESS || "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+const CREATOR_ADDRESS = process.env.NEXT_PUBLIC_CREATOR_ADDRESS || "0x04c6de967a629d1be84e38873a40d4d9289ad7b740f7b8c1ed9b78c033f96c48";
 
 
 // --- TYPE DEFINITIONS ---
@@ -143,11 +144,13 @@ export function PaymentModal({
   };
 
   const handleConfirmPayment = async () => {
+    console.log("account", account);
     setError(null);
     setIsLoading(true);
     setStep("processing");
 
     try {
+      console.log("Starting payment confirmation...");
       let txId: string;
       if (paymentMethod === 'btc' && swapInfo && btcWalletAddress) {
         // Atomiq returns amount in BTC, convert to satoshis for Xverse
@@ -169,45 +172,40 @@ export function PaymentModal({
           throw new Error("Starknet wallet not connected.");
         }
 
-        const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
-        if (!contractAddress) {
-          throw new Error("Contract address is not configured.");
-        }
-
-        const paymentContract = new Contract(abi.abi, contractAddress, account);
-        console.log("paymentContract", paymentContract);
-
-        // --- Step 1: Buy the voucher ---
         const priceInWei = cairo.uint256(BigInt(content.price.strk * 1e18));
-        const buyVoucherTx = await paymentContract.buy_voucher(priceInWei);
-        const buyVoucherReceipt = await account.waitForTransaction(buyVoucherTx.transaction_hash);
+        const contentId = hash.getSelectorFromName(content.id);
 
-        // --- Step 2: Extract the voucher ID from the event ---
-        const events = paymentContract.parser.parseEvents(buyVoucherReceipt);
-        const voucherPurchasedEvent = events.find(
-          (e: any) => e.name === "VoucherPurchased"
-        );
-
-        if (!voucherPurchasedEvent || !voucherPurchasedEvent.data) {
-          throw new Error("Voucher purchase event not found or data is missing.");
-        }
-        const voucherId = voucherPurchasedEvent.data.voucher;
+        // --- Steps 1 & 2: Approve STRK token transfer and buy the voucher in a single multicall ---
+        console.log("Constructing multicall for STRK approval and voucher purchase...");
+        const { transaction_hash: buyTxHash } = await account.execute([
+          {
+            contractAddress: STRK_TOKEN_ADDRESS,
+            entrypoint: 'approve',
+            calldata: CallData.compile({
+              spender: CONTRACT_ADDRESS,
+              amount: priceInWei,
+            }),
+          },
+          {
+            contractAddress: CONTRACT_ADDRESS,
+            entrypoint: 'buy_voucher',
+            calldata: CallData.compile({
+              price: priceInWei,
+            }),
+          },
+        ]);
+        await account.waitForTransaction(buyTxHash);
+        console.log("Voucher purchased.");
 
         // --- Step 3: Redeem the voucher ---
-        const contentId = hash.getSelectorFromName(content.id); // Assuming content.id is a string like "article-1"
-        const creatorAddress = process.env.NEXT_PUBLIC_CREATOR_ADDRESS;
-        if (!creatorAddress) {
-          throw new Error("Creator address is not configured.");
-        }
-
-        const redeemVoucherTx = await paymentContract.redeem_voucher(
-            voucherId,
-            contentId,
-            creatorAddress
-        );
-        await account.waitForTransaction(redeemVoucherTx.transaction_hash);
-
-        txId = redeemVoucherTx.transaction_hash;
+        console.log("Executing redeem_voucher call...");
+        const { transaction_hash: redeemTxHash } = await account.execute({
+            contractAddress: CONTRACT_ADDRESS,
+            entrypoint: "redeem_voucher",
+            calldata: CallData.compile({ voucher: "0x1", content_id: contentId, creator: CREATOR_ADDRESS })
+        });
+        await account.waitForTransaction(redeemTxHash);
+        txId = redeemTxHash;
       }
 
       setTransaction({
@@ -224,6 +222,7 @@ export function PaymentModal({
       });
 
     } catch (err) {
+      console.error("Error in handleConfirmPayment:", err);
       setError(err instanceof Error ? err.message : "An unknown error occurred.");
       setStep("error");
     } finally {
@@ -241,7 +240,7 @@ export function PaymentModal({
           <div className="space-y-6">
             <div>
               <h3 className="text-xl font-semibold mb-2">Choose Payment Method</h3>
-              <p className="text-muted-foreground">Select how you'd like to pay for this content</p>
+              <p className="text-muted-foreground">Select how you’d like to pay for this content</p>
             </div>
             <div className="space-y-3">
               {/* STRK Card */}

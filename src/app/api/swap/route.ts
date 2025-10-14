@@ -24,7 +24,14 @@ const TO_TOKEN = 'STRK.ETH';
 // Path to our simple JSON database
 const SWAPS_DB_PATH = path.resolve(process.cwd(), 'swaps.json');
 
-async function readSwaps() {
+interface SwapData {
+    swapId: string;
+    userStarknetAddress: string;
+    contentId: string;
+    status: string;
+  }
+
+async function readSwaps(): Promise<SwapData[]> {
     try {
         await fs.access(SWAPS_DB_PATH);
         const data = await fs.readFile(SWAPS_DB_PATH, 'utf-8');
@@ -35,7 +42,7 @@ async function readSwaps() {
     }
 }
 
-async function writeSwaps(swaps: any[]) {
+async function writeSwaps(swaps: SwapData[]) {
     await fs.writeFile(SWAPS_DB_PATH, JSON.stringify(swaps, null, 2));
 }
 
