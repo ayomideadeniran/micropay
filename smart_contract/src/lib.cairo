@@ -47,6 +47,7 @@ pub mod PaymentManager {
     use core::option::OptionTrait;
     use super::{IERC20Dispatcher, IERC20DispatcherTrait};
 
+    // ⬇️ FIX: Reverted to simple pausable path. This path structure is the most common. ⬇️
     // Declare component usage
     component!(path: openzeppelin::access::ownable::ownable::OwnableComponent, storage: ownable, event: OwnableEvent);
     component!(path: openzeppelin::security::pausable::PausableComponent, storage: pausable, event: PausableEvent);
@@ -60,10 +61,11 @@ pub mod PaymentManager {
     // Implement internal component traits
     impl OwnableInternalImpl = openzeppelin::access::ownable::ownable::OwnableComponent::InternalImpl<ContractState>;
     impl PausableInternalImpl = openzeppelin::security::pausable::PausableComponent::InternalImpl<ContractState>;
+    // ⬆️ END OF COMPONENT FIXES ⬆️
 
     /// The address of the STRK token contract (Placeholder).
     const STRK_TOKEN_ADDRESS: ContractAddress = 
-        0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7 // Sepolia ETH
+        0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d // Sepolia STRK (CORRECTED)
         .try_into()
         .unwrap();
 
@@ -240,5 +242,3 @@ pub mod PaymentManager {
         }
     }
 }
-
-
