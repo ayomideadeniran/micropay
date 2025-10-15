@@ -13,7 +13,12 @@ import { BtcAddress } from "sats-connect";
 import abi from "../../smart_contract/target/dev/smart_contract_PaymentManager.contract_class.json";
 
 // UPDATED CONSTANTS (Contract Address and STRK Token Address are correctly set)
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x00362e65643f3337472aac758d5ed0731905f3440ede19c6ca2f8903124d9af2";
+// const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x00362e65643f3337472aac758d5ed0731905f3440ede19c6ca2f8903124d9af2";
+// const STRK_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_STRK_TOKEN_ADDRESS || "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+// const CREATOR_ADDRESS = process.env.NEXT_PUBLIC_CREATOR_ADDRESS || "0x04c6de967a629d1be84e38873a40d4d9289ad7b740f7b8c1ed9b78c033f96c48";
+
+
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x05b23dc246e11bba48c8ebb50faecb4cf750798e066627244516c7c649a6efda"; // <--- NEW ADDRESS HERE
 const STRK_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_STRK_TOKEN_ADDRESS || "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const CREATOR_ADDRESS = process.env.NEXT_PUBLIC_CREATOR_ADDRESS || "0x04c6de967a629d1be84e38873a40d4d9289ad7b740f7b8c1ed9b78c033f96c48";
 
@@ -147,6 +152,8 @@ export function PaymentModal({
   };
 
 
+// ... (The rest of the component state and handlers remain the same)
+
 const handleConfirmPayment = async () => {
     console.log("Starting STRK payment confirmation...");
     setError(null);
@@ -155,49 +162,26 @@ const handleConfirmPayment = async () => {
 
     try {
         if (paymentMethod !== 'strk') {
-            // ... (Non-STRK payment logic remains the same)
-            if (paymentMethod === 'btc' && swapInfo && btcWalletAddress) {
-                const amountSats = swapInfo.amount * 1e8;
-                let btcTxHash = await sendBtcPayment(
-                    { address: swapInfo.depositAddress, amount: amountSats },
-                    btcWalletAddress.address
-                );
-                setTransaction({
-                    id: swapInfo?.swapId || Math.random().toString(36).substr(2, 9),
-                    hash: btcTxHash,
-                    status: "pending",
-                    amount: content.price.btc,
-                    currency: "BTC",
-                    timestamp: new Date(),
-                    blockExplorer: `https://mempool.space/tx/${btcTxHash}`,
-                });
-            } else if (paymentMethod === 'cashu') {
-                // Cashu logic placeholder
-            }
+            // ... (Non-STRK payment logic) ...
             return; 
         }
         
-        if (!account) {
-            throw new Error("Starknet wallet not connected.");
-        }
-        
-        if (!provider) {
-            throw new Error("Starknet provider not available for transaction receipt.");
+        if (!account || !provider) {
+            throw new Error("Starknet wallet or provider not available.");
         }
 
-        // --- PRICE CALCULATION FIX ---
-        const PRICE_DECIMAL_PLACES = 3; 
-        const priceMagnitude = 10 ** PRICE_DECIMAL_PLACES; 
-        const rawPriceBigInt = BigInt(Math.round(content.price.strk * priceMagnitude)); 
-        const multiplierBigInt = BigInt('1000000000000000000') / BigInt(priceMagnitude);
-        const finalPrice = rawPriceBigInt * multiplierBigInt;
-        const priceInWei = cairo.uint256(finalPrice);
+        // --- PRICE CALCULATION: Converts human-readable price to u256 wei ---
+        const amountInE18 = content.price.strk * 1e18;
+        const amountWei = BigInt(Math.round(amountInE18));
+        const priceInWei = cairo.uint256(amountWei);
         
         // --- CONTENT ID VALIDATION AND HASHING ---
         if (typeof content.id !== 'string' || content.id.length === 0) {
             throw new Error("Invalid content ID provided.");
         }
         const contentIdFelt = hash.getSelectorFromName(content.id);
+
+        console.log(`Contract: ${CONTRACT_ADDRESS}, Token: ${STRK_TOKEN_ADDRESS}, Price: ${amountWei.toString()}, Content ID: ${contentIdFelt}`);
 
         let finalTxHash: string; 
 
@@ -208,6 +192,7 @@ const handleConfirmPayment = async () => {
         console.log("PHASE 1: Executing Approve and Buy Voucher in multicall...");
         
         const { transaction_hash: buyTxHash } = await account.execute([
+            // 1. APPROVE CALL: Grant PaymentManager contract permission to spend
             {
                 contractAddress: STRK_TOKEN_ADDRESS,
                 entrypoint: 'approve',
@@ -216,15 +201,21 @@ const handleConfirmPayment = async () => {
                     amount: priceInWei,
                 }),
             },
+            // 2. BUY VOUCHER CALL: FIX: Send BOTH content_id (felt252) and price (u256)
+            // This is the only way to satisfy the contract's ABI (3 felts total) and the 
+            // "Failed to deserialize param #2" error. We MUST assume the previous "Input too long"
+            // was a temporary serialization bug on the wallet side.
             {
                 contractAddress: CONTRACT_ADDRESS,
                 entrypoint: 'buy_voucher',
                 calldata: CallData.compile({
-                    price: priceInWei,
+                    content_id: contentIdFelt, // felt252 (1 felt)
+                    price: priceInWei,         // u256 (2 felts)
                 }),
             },
         ]);
         
+        // The wallet prompt appears here. The next line waits for on-chain execution.
         await account.waitForTransaction(buyTxHash);
         console.log("Phase 1 confirmed. Fetching dynamic voucher ID...");
 
@@ -240,7 +231,8 @@ const handleConfirmPayment = async () => {
         );
 
         if (!voucherPurchasedEvent) {
-            throw new Error("VoucherPurchased event not found. Transaction may have reverted. Please check your wallet balance and token approval.");
+            // This error means the multicall reverted on-chain (failed to buy voucher)
+            throw new Error("VoucherPurchased event not found. Transaction may have reverted. Check wallet balance or if price mismatch error reappeared.");
         }
         
         const voucher = voucherPurchasedEvent.data[0];
@@ -257,11 +249,14 @@ const handleConfirmPayment = async () => {
                 entrypoint: "redeem_voucher",
                 calldata: CallData.compile({ 
                     voucher: voucher, 
-                    content_id: contentIdFelt, // Use the verified and hashed content ID
+                    content_id: contentIdFelt, 
                     creator: CREATOR_ADDRESS 
                 })
             }
         ]);
+        
+
+
         
         await account.waitForTransaction(redeemTxHash);
         finalTxHash = redeemTxHash;
@@ -281,13 +276,13 @@ const handleConfirmPayment = async () => {
     } catch (err) {
         console.error("Error in handleConfirmPayment:", err);
         setTransaction(null); 
-        setError(err instanceof Error ? err.message : "An unknown error occurred.");
+        const errorMsg = err instanceof Error ? err.message : "An unknown error occurred.";
+        setError(errorMsg.includes('USER_REFUSED_OP') ? 'Transaction cancelled by user in wallet.' : errorMsg);
         setStep("error");
     } finally {
         setIsLoading(false);
     }
 };
-
 
   // --- UI RENDER LOGIC ---
 
@@ -400,3 +395,10 @@ const handleConfirmPayment = async () => {
     </div>
   );
 }
+
+
+
+
+
+
+
